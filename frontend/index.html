@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>政大遺失物管理與整合平台</title>
+
+  <link rel="stylesheet" href="./assets/css/style.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand" id="brandHomeBtn" title="回首頁">
+      <div class="logo-box">NCCU</div>
+      <div>
+        <h1>政大遺失物管理與整合平台</h1>
+        <p>Lost & Found Integration Platform</p>
+      </div>
+    </div>
+
+    <div class="user-panel">
+  <button id="adminLoginBtn" class="admin-btn">Admin</button>
+
+  <button id="accountBtn" class="account-btn">尚未登入</button>
+
+  <div id="accountMenu" class="account-menu hidden">
+    <button id="myReportsBtn">我的通報</button>
+    <button id="myClaimsBtn">我的認領申請</button>
+    <button id="receivedClaimsBtn">我收到的認領申請</button>
+    <button id="myNotificationsBtn">我的通知</button>
+    <button id="logoutBtn">登出</button>
+  </div>
+
+  <button id="openLoginBtn">登入 / 建立使用者</button>
+</div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="card" id="loginCard">
+        <h2>快速登入</h2>
+
+        <label id="quickNameLabel">姓名</label>
+        <input id="quickName" type="text" placeholder="例如：王小明" />
+
+        <label>身分</label>
+        <select id="quickIdentity">
+          <option value="">請選擇身分</option>
+          <option value="student">本校學生</option>
+          <option value="staff">教職員</option>
+          <option value="outsider">外校人士</option>
+        </select>
+
+        <div id="quickStudentFields" class="hidden">
+          <label>學號</label>
+          <input id="quickStudentId" type="text" placeholder="例如：113306000" />
+
+          <label>電話</label>
+          <input id="quickStudentPhone" type="text" placeholder="例如：0912345678" />
+        </div>
+
+        <div id="quickStaffFields" class="hidden">
+          <label>教師編號</label>
+          <input id="quickStaffId" type="text" placeholder="例如：T001" />
+
+          <label>電話</label>
+          <input id="quickStaffPhone" type="text" placeholder="例如：0912345678" />
+        </div>
+
+        <div id="quickOutsiderFields" class="hidden">
+          <label>電話</label>
+          <input id="quickOutsiderPhone" type="text" placeholder="例如：0987654321" />
+        </div>
+
+        <button id="quickLoginBtn" class="primary-btn">快速登入</button>
+      </section>
+
+      <section class="card">
+        <h2>篩選遺失物</h2>
+
+        <label>關鍵字</label>
+        <input id="keywordInput" type="text" placeholder="例如：雨傘、學生證" />
+
+        <label>類別</label>
+        <select id="categoryFilter">
+          <option value="">全部類別</option>
+        </select>
+
+        <label>篩選地點</label>
+        <select id="filterAreaSelect">
+          <option value="">全部大地點</option>
+        </select>
+
+        <select id="filterDetailSelect" class="hidden">
+          <option value="">全部小地點</option>
+        </select>
+
+        <label>通報類型</label>
+        <select id="typeFilter">
+          <option value="">全部</option>
+          <option value="F">拾獲物</option>
+          <option value="L">遺失物</option>
+        </select>
+
+        <label>狀態</label>
+        <select id="statusFilter">
+          <option value="">全部狀態</option>
+          <option value="待處理">待處理</option>
+          <option value="待認領">待認領</option>
+        </select>
+
+        <button id="searchBtn" class="primary-btn">查詢</button>
+      </section>
+
+      <section class="card">
+        <h2>新增通報</h2>
+
+        <form id="reportForm">
+          <label>通報類型</label>
+          <select id="reportType" name="type" required>
+            <option value="F">我撿到東西</option>
+            <option value="L">我遺失東西</option>
+          </select>
+
+          <label>物品名稱</label>
+          <input id="itemName" name="item_name" type="text" placeholder="例如：黑色雨傘" required />
+
+          <label>類別</label>
+          <select id="reportCategory" name="category_id" required></select>
+
+          <label id="locationLabel">拾獲地點</label>
+          <select id="reportAreaSelect">
+            <option value="">選擇大地點</option>
+          </select>
+
+          <select id="reportDetailSelect" class="hidden">
+            <option value="">全部</option>
+          </select>
+
+          <input
+            id="manualLocationText"
+            name="manual_location_text"
+            type="text"
+            placeholder="手動輸入位置，例如：商學院一樓走廊、門口旁、樓梯間"
+          />
+
+          <label>日期</label>
+          <input id="eventDate" name="event_date" type="date" required />
+
+          <div id="storageLocationBlock">
+            <label>目前放在哪裡</label>
+            <input id="storageLocation" name="storage_location" type="text" placeholder="例如：已送至駐警隊 / 放在原地" />
+          </div>
+
+          <div id="verificationSection" class="hidden">
+            <label class="checkbox-line">
+              <input id="hasVerificationQuestion" type="checkbox" />
+              設定特徵問題，避免冒領
+            </label>
+
+            <div id="verificationFields" class="hidden">
+              <label>特徵問題</label>
+              <input
+                id="verificationQuestion"
+                type="text"
+                placeholder="例如：雨傘柄上有什麼特徵？"
+              />
+
+              <label>參考答案</label>
+              <input
+                id="verificationAnswer"
+                type="text"
+                placeholder="例如：有白色姓名貼"
+              />
+            </div>
+          </div>
+
+          <label>補充描述</label>
+          <textarea id="note" name="note" rows="3" placeholder="例如：傘柄有貼紙、外殼有刮痕"></textarea>
+
+          <label>物品照片</label>
+          <input id="itemPhoto" name="item_photo" type="file" accept="image/*" />
+
+          <button type="submit" class="primary-btn">送出通報</button>
+        </form>
+      </section>
+    </aside>
+
+    <section class="content">
+      <div class="view-toolbar hidden" id="viewToolbar">
+        <button id="homeBtn" class="secondary-btn">← 回首頁</button>
+        <span id="viewTitle">首頁</span>
+      </div>
+
+      <div id="homeView">
+        <section class="card hero">
+          <div>
+            <h2>校園地圖定位</h2>
+          </div>
+          <button id="reloadBtn">重新整理</button>
+        </section>
+
+        <section class="map-card">
+          <div class="map-wrapper">
+            <img id="campusMap" src="./assets/maps/campus-map.png" alt="政大校園地圖" />
+            <div id="mapRegions"></div>
+            <div id="mapPins"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>通報列表</h2>
+          <div id="homeReportList" class="report-grid"></div>
+        </section>
+
+        <section class="card">
+          <h2>我的通知</h2>
+          <div id="notificationList" class="notification-list">
+            尚未登入，登入後會顯示通知。
+          </div>
+        </section>
+      </div>
+
+      <div id="authView" class="hidden">
+        <section class="card auth-card">
+          <div class="auth-tabs">
+            <button id="showLoginTabBtn" class="auth-tab active" type="button">登入</button>
+            <button id="showRegisterTabBtn" class="auth-tab" type="button">註冊新使用者</button>
+          </div>
+
+          <h2 id="authHeading">登入</h2>
+          <p class="muted-text" id="authHint">請輸入已註冊的使用者資料。</p>
+
+          <label id="authNameLabel">姓名</label>
+          <input id="authName" type="text" placeholder="例如：王小明" />
+
+          <label>身分</label>
+          <select id="authIdentity">
+            <option value="">請選擇身分</option>
+            <option value="student">本校學生</option>
+            <option value="staff">教職員</option>
+            <option value="outsider">外校人士</option>
+          </select>
+
+          <div id="authStudentFields" class="hidden">
+            <label>學號</label>
+            <input id="authStudentId" type="text" placeholder="例如：113306000" />
+
+            <label>電話</label>
+            <input id="authStudentPhone" type="text" placeholder="例如：0912345678" />
+          </div>
+
+          <div id="authStaffFields" class="hidden">
+            <label>教師編號</label>
+            <input id="authStaffId" type="text" placeholder="例如：T001" />
+
+            <label>電話</label>
+            <input id="authStaffPhone" type="text" placeholder="例如：0912345678" />
+          </div>
+
+          <div id="authOutsiderFields" class="hidden">
+            <label>電話</label>
+            <input id="authOutsiderPhone" type="text" placeholder="例如：0987654321" />
+          </div>
+
+          <button id="authSubmitBtn" class="primary-btn">登入</button>
+        </section>
+      </div>
+
+      <div id="adminLoginView" class="hidden">
+  <section class="card auth-card">
+    <h2>管理員登入</h2>
+    <p class="muted-text">帳號密碼由系統管理員給予。</p>
+
+    <label>管理員帳號</label>
+    <input id="adminUsername" type="text" placeholder="請輸入 admin" />
+
+    <label>管理員密碼</label>
+    <input id="adminPassword" type="password" placeholder="請輸入密碼" />
+
+    <button id="adminSubmitBtn" class="primary-btn">登入 Admin</button>
+  </section>
+</div>
+
+<div id="adminDashboardView" class="hidden">
+  <section class="card">
+    <div class="dashboard-header">
+      <div>
+        <h2>系統報表總覽</h2>
+        <p class="muted-text">管理員可以查看目前遺失物系統的整體使用情況。</p>
+      </div>
+      <button id="adminLogoutBtn" class="danger-btn">退出 Admin</button>
+    </div>
+
+    <div id="adminStats" class="stats-grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>遺失物熱區分布</h2>
+    <div id="hotspotChart" class="bar-chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>類別分布</h2>
+    <div id="categoryChart" class="bar-chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>近期通報列表</h2>
+    <div id="adminRecentReports" class="report-list-wide"></div>
+  </section>
+</div>
+      
+      <div id="listView" class="hidden">
+        <section class="card">
+          <h2 id="listViewHeading">篩選結果</h2>
+          <p id="listViewHint" class="muted-text"></p>
+          <div id="resultReportList" class="report-grid"></div>
+        </section>
+      </div>
+
+      <div id="detailView" class="hidden">
+        <section class="card">
+          <div id="detailContent"></div>
+        </section>
+      </div>
+
+      <div id="chatView" class="hidden">
+  <section class="card chat-card">
+    <div class="chat-header">
+      <div>
+        <h2 id="chatTitle">聊天室</h2>
+        <p id="chatHint" class="muted-text"></p>
+      </div>
+      <button id="trustUserBtn" class="secondary-btn hidden">信任遺失者</button>
+    </div>
+
+    <div id="chatMessages" class="chat-messages"></div>
+
+    <div class="chat-input-row">
+      <input id="chatInput" type="text" placeholder="輸入訊息..." />
+      <button id="sendMessageBtn" class="primary-btn">送出</button>
+    </div>
+  </section>
+</div>
+
+      <div id="buildingMapView" class="hidden">
+  <section class="card">
+    <div class="building-map-header">
+      <div>
+        <h2 id="buildingMapTitle">商院教室配置圖</h2>
+        <p class="muted-text">點選校園地圖上的建築區域後，會在這裡顯示更細部的樓層配置。</p>
+      </div>
+    </div>
+
+    <div class="building-map-wrapper">
+      <img id="businessCollegeMap" src="./assets/maps/business-college-map.png" alt="商院教室配置圖" />
+    </div>
+
+    <section class="recommend-section">
+      <h2>此建築相關通報</h2>
+      <div id="buildingReportList" class="report-grid"></div>
+    </section>
+  </section>
+</div>
+      
+    </section>
+  </main>
+
+  <script src="./assets/js/api.js"></script>
+  <script src="./assets/js/map.js"></script>
+  <script src="./assets/js/app.js"></script>
+</body>
+</html>
