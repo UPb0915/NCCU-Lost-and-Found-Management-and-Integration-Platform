@@ -1,4 +1,11 @@
-const API_BASE_URL = "http://127.0.0.1:5000/api";
+const API_BASE_URL = (() => {
+  const origin = window.location.origin;
+  if (origin && origin !== "null") {
+    return `${origin}/api`;
+  }
+
+  return "http://127.0.0.1:5000/api";
+})();
 
 async function parseJsonResponse(response, fallbackMessage) {
   let data = {};

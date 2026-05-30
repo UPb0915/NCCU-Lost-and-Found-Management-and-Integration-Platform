@@ -18,6 +18,8 @@ def create_app():
 
     app.config.from_object(Config)
     app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), Config.UPLOAD_FOLDER)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    frontend_dir = os.path.join(base_dir, "frontend")
 
     CORS(app)
 
@@ -33,9 +35,15 @@ def create_app():
 
     @app.route("/")
     def home():
-        return jsonify({
-            "message": "NCCU Lost & Found API is running",
-        })
+        return send_from_directory(frontend_dir, "index.html")
+
+    @app.route("/index.html")
+    def index():
+        return send_from_directory(frontend_dir, "index.html")
+
+    @app.route("/assets/<path:filename>")
+    def frontend_assets(filename):
+        return send_from_directory(os.path.join(frontend_dir, "assets"), filename)
 
     @app.route("/api/health")
     def health():

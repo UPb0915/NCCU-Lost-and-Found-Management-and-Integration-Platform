@@ -214,7 +214,10 @@ def create_report():
     verification_question = (request.form.get("verification_question") or "").strip()
     verification_answer = (request.form.get("verification_answer") or "").strip()
 
-    area_id = int(area_id) if area_id else None
+    if not area_id:
+        return jsonify({"success": False, "message": "請選擇大地點後再送出通報"}), 400
+
+    area_id = int(area_id)
     detail_id = int(detail_id) if detail_id else None
 
     if report_type not in ["L", "F"]:

@@ -11,6 +11,14 @@ let latestNotifications = [];
 let adminUserPanelMode = "suspicious";
 let locationAreas = [];
 let locationDetailsByArea = {};
+const APP_BASE_URL = (() => {
+  const origin = window.location.origin;
+  if (origin && origin !== "null") {
+    return origin;
+  }
+
+  return "http://127.0.0.1:5000";
+})();
 
 function roleLabel(role) {
   if (role === "student") return "本校學生";
@@ -1388,6 +1396,13 @@ async function submitReport(event) {
   const areaId = reportAreaSelect?.value || "";
   const detailId = reportDetailSelect?.value || "";
   const manualLocationText = manualLocationTextInput?.value.trim() || "";
+
+  if (!areaId) {
+    alert("請先選擇大地點，不能使用預設空白。");
+    reportAreaSelect?.focus();
+    return;
+  }
+
   const selectedAreaText = reportAreaSelect?.selectedOptions[0]?.textContent.trim() || "";
   const selectedDetailText = reportDetailSelect?.selectedOptions[0]?.textContent.trim() || "";
   const finalLocationText = manualLocationText || [selectedAreaText, selectedDetailText]
@@ -2610,7 +2625,7 @@ function getPhotoUrl(photoPath) {
   if (!photoPath) return "";
   if (photoPath.startsWith("blob:")) return photoPath;
   if (photoPath.startsWith("http")) return photoPath;
-  if (photoPath.startsWith("/uploads")) return `http://127.0.0.1:5000${photoPath}`;
+  if (photoPath.startsWith("/uploads")) return `${APP_BASE_URL}${photoPath}`;
   return photoPath;
 }
 

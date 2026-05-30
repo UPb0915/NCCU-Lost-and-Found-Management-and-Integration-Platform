@@ -3,18 +3,18 @@ const BUILDING_AREAS = [
     key: "social_science",
     name: "社資中心",
     aliases: ["社資中心", "社會科學資料中心"],
-    left: 76.3,
-    top: 31.4,
-    width: 4.8,
+    left: 74.3,
+    top: 30,
+    width: 6,
     height: 8.2
   },
   {
     key: "jing_tang",
     name: "井塘樓",
     aliases: ["井塘樓"],
-    left: 72.5,
-    top: 37.8,
-    width: 3.8,
+    left: 70.5,
+    top: 36.8,
+    width: 5,
     height: 7.2
   },
   {
@@ -58,9 +58,9 @@ const BUILDING_AREAS = [
     name: "中正圖書館",
     aliases: ["中正圖書館", "圖書館"],
     left: 47.2,
-    top: 38.2,
+    top: 35,
     width: 7.4,
-    height: 9.5
+    height: 12
   },
   {
     key: "zhixi",
