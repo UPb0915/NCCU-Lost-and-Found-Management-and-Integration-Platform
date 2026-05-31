@@ -366,7 +366,7 @@ def get_suspicious_users():
             u.phone_number,
             u.is_blocked,
             u.blocked_reason,
-            COUNT(l.log_id) AS recent_activity_count
+            COUNT(l.activity_id) AS recent_activity_count
         FROM user_account u
         LEFT JOIN user_activity_log l
           ON u.user_id = l.user_id

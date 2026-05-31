@@ -4,6 +4,13 @@ from datetime import datetime
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.utils import secure_filename
 
+from concurrency_utils import (
+    blocked_response,
+    duplicate_report_response,
+    has_duplicate_report_in_5_minutes,
+    is_user_blocked,
+    stale_data_response,
+)
 from db import fetch_all, fetch_one, get_connection
 from services.match_service import find_matches_and_notify
 from services.security_service import check_security_before_report, log_activity
@@ -214,6 +221,9 @@ def create_report():
     verification_question = (request.form.get("verification_question") or "").strip()
     verification_answer = (request.form.get("verification_answer") or "").strip()
 
+    if report_type == "F" and has_verification_question and (not verification_question or not verification_answer):
+        return jsonify({"success": False, "message": "請填寫特徵問題與參考答案"}), 400
+
     if not area_id:
         return jsonify({"success": False, "message": "請選擇大地點後再送出通報"}), 400
 
@@ -270,6 +280,24 @@ def create_report():
     cursor = connection.cursor(dictionary=True)
 
     try:
+        connection.start_transaction()
+
+        if is_user_blocked(cursor, user_id):
+            connection.rollback()
+            return blocked_response()
+
+        if has_duplicate_report_in_5_minutes(
+            cursor,
+            user_id=user_id,
+            report_type=report_type,
+            item_name=item_name,
+            category_id=category_id,
+            location_name=location_name_text or "未填寫地點",
+            event_date=event_date,
+        ):
+            connection.rollback()
+            return duplicate_report_response()
+
         location = get_or_create_location(cursor, location_name_text)
 
         cursor.execute(
@@ -313,9 +341,6 @@ def create_report():
         report_id = cursor.lastrowid
 
         if report_type == "F":
-            if has_verification_question and (not verification_question or not verification_answer):
-                return jsonify({"success": False, "message": "請填寫特徵問題與參考答案"}), 400
-
             cursor.execute(
                 """
                 INSERT INTO found_report (report_id, storage_location, has_verification_question)
@@ -378,69 +403,94 @@ def update_report_status(report_id):
     if not user_id or not new_status:
         return jsonify({"success": False, "message": "缺少更新狀態資料"}), 400
 
-    report = fetch_one(
-        """
-        SELECT
-            r.report_id,
-            r.user_id,
-            r.type,
-            r.status,
-            i.item_name
-        FROM report r
-        JOIN item i ON r.item_id = i.item_id
-        WHERE r.report_id = %s
-          AND r.deleted_at IS NULL
-        """,
-        (report_id,),
-    )
-
-    if not report:
-        return jsonify({"success": False, "message": "找不到通報資料"}), 404
-
-    if str(report["user_id"]) != str(user_id):
-        return jsonify({"success": False, "message": "只有通報者本人可以更新此通報狀態"}), 403
-
-    allowed = False
-
-    if report["type"] == "L" and new_status == "已處理":
-        allowed = True
-
-    if report["type"] == "F" and new_status == "已認領":
-        completed_claim = fetch_one(
-            """
-            SELECT claim_id
-            FROM claim_request
-            WHERE found_report_id = %s
-              AND status = '已完成'
-            LIMIT 1
-            """,
-            (report_id,),
-        )
-
-        if completed_claim:
-            allowed = True
-        else:
-            return jsonify({
-                "success": False,
-                "message": "拾獲物必須透過認領流程完成後，才能標記為已認領。",
-            }), 400
-
-    if not allowed:
-        return jsonify({"success": False, "message": "此狀態不允許手動更新"}), 400
-
     connection = get_connection()
     cursor = connection.cursor(dictionary=True)
 
     try:
+        connection.start_transaction()
+
+        if is_user_blocked(cursor, user_id):
+            connection.rollback()
+            return blocked_response()
+
+        cursor.execute(
+            """
+            SELECT
+                r.report_id,
+                r.user_id,
+                r.type,
+                r.status,
+                r.deleted_at,
+                i.item_name
+            FROM report r
+            JOIN item i ON r.item_id = i.item_id
+            WHERE r.report_id = %s
+            FOR UPDATE
+            """,
+            (report_id,),
+        )
+        report = cursor.fetchone()
+
+        if not report:
+            connection.rollback()
+            return jsonify({"success": False, "message": "找不到通報資料"}), 404
+
+        if str(report["user_id"]) != str(user_id):
+            connection.rollback()
+            return jsonify({"success": False, "message": "只有通報者本人可以更新此通報狀態"}), 403
+
+        if report.get("deleted_at") is not None or report["status"] in CLOSED_STATUS:
+            connection.rollback()
+            return stale_data_response()
+
+        allowed = False
+
+        if report["type"] == "L" and new_status == "已處理":
+            allowed = True
+
+        if report["type"] == "F" and new_status == "已認領":
+            cursor.execute(
+                """
+                SELECT claim_id
+                FROM claim_request
+                WHERE found_report_id = %s
+                  AND status = '已完成'
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (report_id,),
+            )
+            completed_claim = cursor.fetchone()
+
+            if completed_claim:
+                allowed = True
+            else:
+                connection.rollback()
+                return jsonify({
+                    "success": False,
+                    "message": "拾獲物必須透過認領流程完成後，才能標記為已認領。",
+                }), 400
+
+        if not allowed:
+            connection.rollback()
+            return jsonify({"success": False, "message": "此狀態不允許手動更新"}), 400
+
         cursor.execute(
             """
             UPDATE report
             SET status = %s,
-                resolved_at = NOW()
+                resolved_at = NOW(),
+                updated_at = NOW()
             WHERE report_id = %s
+              AND deleted_at IS NULL
+              AND status NOT IN ('已處理', '已認領')
             """,
             (new_status, report_id),
         )
+
+        if cursor.rowcount == 0:
+            connection.rollback()
+            return stale_data_response()
 
         if report["type"] == "L" and new_status == "已處理":
             cursor.execute(
@@ -512,14 +562,29 @@ def delete_report(report_id):
     cursor = connection.cursor(dictionary=True)
 
     try:
+        connection.start_transaction()
+
+        if is_user_blocked(cursor, user_id):
+            connection.rollback()
+            return blocked_response()
+
         cursor.execute(
             """
             UPDATE report
-            SET status = '已刪除', deleted_at = NOW()
+            SET status = '已刪除',
+                deleted_at = NOW(),
+                updated_at = NOW()
             WHERE report_id = %s
+              AND deleted_at IS NULL
+              AND status NOT IN ('已處理', '已認領')
             """,
             (report_id,),
         )
+
+        if cursor.rowcount == 0:
+            connection.rollback()
+            return stale_data_response()
+
         connection.commit()
     except Exception as exc:
         connection.rollback()

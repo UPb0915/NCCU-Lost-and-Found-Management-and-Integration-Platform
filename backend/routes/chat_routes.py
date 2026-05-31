@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 
+from concurrency_utils import blocked_response, is_user_blocked
 from db import execute, fetch_all, fetch_one, get_connection
 
 chat_bp = Blueprint("chat_bp", __name__)
@@ -119,6 +120,12 @@ def open_chat():
     cursor = connection.cursor(dictionary=True)
 
     try:
+        connection.start_transaction()
+
+        if is_user_blocked(cursor, current_user_id):
+            connection.rollback()
+            return blocked_response()
+
         cursor.execute(
             """
             INSERT INTO conversation (report_id)
@@ -162,6 +169,12 @@ def send_message():
     cursor = conn.cursor(dictionary=True)
 
     try:
+        conn.start_transaction()
+
+        if is_user_blocked(cursor, sender_id):
+            conn.rollback()
+            return blocked_response()
+
         # 1. 一次查聊天室基本資料
         cursor.execute(
             """
@@ -337,6 +350,12 @@ def trust_user():
     cursor = connection.cursor(dictionary=True)
 
     try:
+        connection.start_transaction()
+
+        if is_user_blocked(cursor, owner_user_id):
+            connection.rollback()
+            return blocked_response()
+
         cursor.execute(
             """
             UPDATE found_report

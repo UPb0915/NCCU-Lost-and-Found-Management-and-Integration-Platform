@@ -1,5 +1,12 @@
 from flask import Blueprint, jsonify, request
 
+from concurrency_utils import (
+    FINAL_REPORT_STATUSES,
+    blocked_response,
+    has_active_claim_for_found_report,
+    is_user_blocked,
+    stale_data_response,
+)
 from db import fetch_all, fetch_one, get_connection
 from services.security_service import check_security_before_claim, log_activity
 
@@ -139,6 +146,48 @@ def create_claim():
     cursor = conn.cursor(dictionary=True)
 
     try:
+        conn.start_transaction()
+
+        if is_user_blocked(cursor, claimant_user_id):
+            conn.rollback()
+            return blocked_response()
+
+        cursor.execute(
+            """
+            SELECT
+                r.report_id,
+                r.user_id AS owner_user_id,
+                r.status,
+                i.item_name,
+                fr.has_verification_question,
+                r.deleted_at
+            FROM report r
+            JOIN item i ON r.item_id = i.item_id
+            JOIN found_report fr ON r.report_id = fr.report_id
+            WHERE r.report_id = %s
+              AND r.type = 'F'
+            FOR UPDATE
+            """,
+            (found_report_id,),
+        )
+        locked_found_report = cursor.fetchone()
+
+        if not locked_found_report or locked_found_report.get("deleted_at") is not None:
+            conn.rollback()
+            return stale_data_response("找不到拾獲物通報")
+
+        if locked_found_report["status"] != "待認領":
+            conn.rollback()
+            return stale_data_response("此拾獲物目前不可認領")
+
+        if str(locked_found_report["owner_user_id"]) == str(claimant_user_id):
+            conn.rollback()
+            return jsonify({"success": False, "message": "不能認領自己通報的拾獲物"}), 400
+
+        if locked_found_report.get("has_verification_question") and not verification_answer:
+            conn.rollback()
+            return jsonify({"success": False, "message": "請回答拾獲者設定的特徵問題"}), 400
+
         cursor.execute(
             """
             INSERT INTO claim_request
@@ -158,7 +207,7 @@ def create_claim():
                 found_report_id,
                 lost_report_id,
                 claimant_user_id,
-                found_report["owner_user_id"],
+                locked_found_report["owner_user_id"],
                 claim_message,
                 verification_answer,
             ),
@@ -174,9 +223,9 @@ def create_claim():
                 (%s, %s, 'claim', %s)
             """,
             (
-                found_report["owner_user_id"],
+                locked_found_report["owner_user_id"],
                 found_report_id,
-                f"有人想認領你的拾獲物「{found_report['item_name']}」，請前往我收到的認領申請審核。",
+                f"有人想認領你的拾獲物「{locked_found_report['item_name']}」，請前往我收到的認領申請審核。",
             ),
         )
 
@@ -311,44 +360,78 @@ def accept_claim(claim_id):
     data = request.get_json() or {}
     owner_user_id = data.get("owner_user_id")
 
-    claim = get_claim_detail(claim_id)
-
-    if not claim:
-        return jsonify({"success": False, "message": "找不到認領申請"}), 404
-
-    if str(claim["owner_user_id"]) != str(owner_user_id):
-        return jsonify({"success": False, "message": "只有拾獲者可以接受認領"}), 403
-
-    if claim["status"] != "待審核":
-        return jsonify({"success": False, "message": "此申請目前不可接受"}), 400
-
-    accepted_claim = fetch_one(
-        """
-        SELECT claim_id
-        FROM claim_request
-        WHERE found_report_id = %s
-          AND status = '已接受'
-          AND claim_id <> %s
-        """,
-        (claim["found_report_id"], claim_id),
-    )
-
-    if accepted_claim:
-        return jsonify({"success": False, "message": "此拾獲物已經有一筆已接受的認領申請"}), 409
-
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
+        conn.start_transaction()
+
+        if is_user_blocked(cursor, owner_user_id):
+            conn.rollback()
+            return blocked_response()
+
+        cursor.execute(
+            """
+            SELECT
+                cr.claim_id,
+                cr.found_report_id,
+                cr.claimant_user_id,
+                cr.owner_user_id,
+                cr.status,
+                fr.storage_location,
+                r.status AS report_status,
+                r.deleted_at,
+                i.item_name
+            FROM claim_request cr
+            JOIN report r ON cr.found_report_id = r.report_id
+            JOIN found_report fr ON cr.found_report_id = fr.report_id
+            JOIN item i ON r.item_id = i.item_id
+            WHERE cr.claim_id = %s
+            FOR UPDATE
+            """,
+            (claim_id,),
+        )
+        claim = cursor.fetchone()
+
+        if not claim:
+            conn.rollback()
+            return jsonify({"success": False, "message": "找不到認領申請"}), 404
+
+        if str(claim["owner_user_id"]) != str(owner_user_id):
+            conn.rollback()
+            return jsonify({"success": False, "message": "只有拾獲者可以接受認領"}), 403
+
+        if claim.get("deleted_at") is not None or claim["report_status"] in FINAL_REPORT_STATUSES:
+            conn.rollback()
+            return stale_data_response()
+
+        if claim["status"] != "待審核":
+            conn.rollback()
+            return stale_data_response("此申請目前不可接受")
+
+        if has_active_claim_for_found_report(
+            cursor,
+            claim["found_report_id"],
+            exclude_claim_id=claim_id,
+            for_update=True,
+        ):
+            conn.rollback()
+            return jsonify({"success": False, "message": "此拾獲物已有通過的領取申請，請重新整理後再查看。"}), 409
+
         cursor.execute(
             """
             UPDATE claim_request
             SET status = '已接受',
                 reviewed_at = NOW()
             WHERE claim_id = %s
+              AND status = '待審核'
             """,
             (claim_id,),
         )
+
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return stale_data_response()
 
         cursor.execute(
             """
@@ -398,6 +481,12 @@ def reject_claim(claim_id):
     cursor = conn.cursor(dictionary=True)
 
     try:
+        conn.start_transaction()
+
+        if is_user_blocked(cursor, owner_user_id):
+            conn.rollback()
+            return blocked_response()
+
         cursor.execute(
             """
             UPDATE claim_request
@@ -457,6 +546,12 @@ def cancel_claim(claim_id):
     cursor = conn.cursor(dictionary=True)
 
     try:
+        conn.start_transaction()
+
+        if is_user_blocked(cursor, claimant_user_id):
+            conn.rollback()
+            return blocked_response()
+
         cursor.execute(
             """
             UPDATE claim_request
@@ -500,50 +595,128 @@ def complete_claim(claim_id):
     data = request.get_json() or {}
     claimant_user_id = data.get("claimant_user_id")
 
-    claim = get_claim_detail(claim_id)
-
-    if not claim:
-        return jsonify({"success": False, "message": "找不到認領申請"}), 404
-
-    if str(claim["claimant_user_id"]) != str(claimant_user_id):
-        return jsonify({"success": False, "message": "只有申請者可以確認取回"}), 403
-
-    if claim["status"] != "已接受":
-        return jsonify({"success": False, "message": "只有已接受的申請可以完成取回"}), 400
-
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
     try:
+        conn.start_transaction()
+
+        if is_user_blocked(cursor, claimant_user_id):
+            conn.rollback()
+            return blocked_response()
+
+        cursor.execute(
+            """
+            SELECT
+                cr.claim_id,
+                cr.found_report_id,
+                cr.lost_report_id,
+                cr.claimant_user_id,
+                cr.owner_user_id,
+                cr.status,
+                claimant.name AS claimant_name,
+                found_item.item_name AS found_item_name,
+                found_report.status AS found_status,
+                found_report.deleted_at AS found_deleted_at,
+                lost_report.status AS lost_status,
+                lost_report.deleted_at AS lost_deleted_at
+            FROM claim_request cr
+            JOIN user_account claimant
+              ON cr.claimant_user_id = claimant.user_id
+            JOIN report found_report
+              ON cr.found_report_id = found_report.report_id
+            JOIN item found_item
+              ON found_report.item_id = found_item.item_id
+            LEFT JOIN report lost_report
+              ON cr.lost_report_id = lost_report.report_id
+            WHERE cr.claim_id = %s
+            FOR UPDATE
+            """,
+            (claim_id,),
+        )
+        claim = cursor.fetchone()
+
+        if not claim:
+            conn.rollback()
+            return jsonify({"success": False, "message": "找不到認領申請"}), 404
+
+        if str(claim["claimant_user_id"]) != str(claimant_user_id):
+            conn.rollback()
+            return jsonify({"success": False, "message": "只有申請者可以確認取回"}), 403
+
+        if claim["status"] not in ("已接受", "交接中"):
+            conn.rollback()
+            return stale_data_response("只有已接受的申請可以完成取回")
+
+        if claim.get("found_deleted_at") is not None or claim.get("found_status") in FINAL_REPORT_STATUSES:
+            conn.rollback()
+            return stale_data_response()
+
+        if claim.get("lost_report_id") and (
+            claim.get("lost_deleted_at") is not None
+            or claim.get("lost_status") in FINAL_REPORT_STATUSES
+        ):
+            conn.rollback()
+            return stale_data_response()
+
         cursor.execute(
             """
             UPDATE claim_request
             SET status = '已完成',
                 completed_at = NOW()
             WHERE claim_id = %s
+              AND status IN ('已接受', '交接中')
             """,
             (claim_id,),
         )
+
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return stale_data_response()
 
         cursor.execute(
             """
             UPDATE report
             SET status = '已認領',
-                resolved_at = NOW()
+                resolved_at = NOW(),
+                updated_at = NOW()
             WHERE report_id = %s
+              AND deleted_at IS NULL
+              AND status NOT IN ('已處理', '已認領')
             """,
             (claim["found_report_id"],),
         )
+
+        if cursor.rowcount == 0:
+            conn.rollback()
+            return stale_data_response()
 
         if claim.get("lost_report_id"):
             cursor.execute(
                 """
                 UPDATE report
                 SET status = '已處理',
-                    resolved_at = NOW()
+                    resolved_at = NOW(),
+                    updated_at = NOW()
                 WHERE report_id = %s
+                  AND deleted_at IS NULL
+                  AND status NOT IN ('已處理', '已認領')
                 """,
                 (claim["lost_report_id"],),
+            )
+
+            if cursor.rowcount == 0:
+                conn.rollback()
+                return stale_data_response()
+
+            cursor.execute(
+                """
+                UPDATE report_match
+                SET match_status = '已完成'
+                WHERE found_report_id = %s
+                  AND lost_report_id = %s
+                """,
+                (claim["found_report_id"], claim["lost_report_id"]),
             )
 
         cursor.execute(
