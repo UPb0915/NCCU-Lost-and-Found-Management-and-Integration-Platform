@@ -1,16 +1,3 @@
-"""Batch hash admin passwords.
-
-Usage:
-  python3 backend/scripts/hash_admin_passwords.py [--yes]
-
-This script will:
- - fetch all rows from `admin_account`
- - detect entries where `password_hash` appears to be plaintext
- - write a timestamped backup CSV containing admin_id,username,old_password
- - replace the stored password with a werkzeug-generated hash
-
-Only update entries that do not already look like a modern hash.
-"""
 from __future__ import annotations
 
 import csv

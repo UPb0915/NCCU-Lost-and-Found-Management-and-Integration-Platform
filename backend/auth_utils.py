@@ -1,3 +1,4 @@
+"""Admin authentication utilities for route protection."""
 from functools import wraps
 
 from flask import session, jsonify
@@ -7,7 +8,7 @@ def require_admin_auth(f):
     """Decorator to protect admin routes. Checks if user has valid admin session."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-    
+        # Check if admin_id is in session
         admin_id = session.get("admin_id")
         
         if not admin_id:

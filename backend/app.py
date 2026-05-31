@@ -18,6 +18,10 @@ def create_app():
 
     app.config.from_object(Config)
     app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), Config.UPLOAD_FOLDER)
+    
+    # Set session secret key for admin authentication
+    app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret-key-change-in-production")
+    
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     frontend_dir = os.path.join(base_dir, "frontend")
 
