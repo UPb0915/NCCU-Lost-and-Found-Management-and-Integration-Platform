@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from db import execute, fetch_one
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -320,8 +320,13 @@ def admin_login():
             )
             admin["password_hash"] = new_hash
         except Exception:
-            
             pass
+
+    # Set admin session
+    session["admin_id"] = admin["admin_id"]
+    session["admin_username"] = admin["username"]
+    session["admin_display_name"] = admin["display_name"]
+
     return jsonify({
         "success": True,
         "message": "Admin 登入成功",
@@ -330,5 +335,14 @@ def admin_login():
             "username": admin["username"],
             "display_name": admin["display_name"],
         },
+    })
+
+
+@auth_bp.route("/admin/logout", methods=["POST"])
+def admin_logout():
+    session.clear()
+    return jsonify({
+        "success": True,
+        "message": "已登出",
     })
  

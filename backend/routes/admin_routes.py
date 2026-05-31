@@ -4,6 +4,7 @@ import io
 from flask import Blueprint, Response, jsonify, request
 
 from db import execute, fetch_all, fetch_one, get_connection
+from auth_utils import require_admin_auth
 
 admin_bp = Blueprint("admin_bp", __name__)
 
@@ -63,6 +64,7 @@ def role_to_chinese(role):
 
 
 @admin_bp.route("/admin/stats", methods=["GET"])
+@require_admin_auth
 def admin_stats():
     report_where, report_params = build_admin_date_filter("r")
     claim_where, claim_params = build_admin_date_filter_without_deleted("cr")
@@ -247,6 +249,7 @@ def admin_stats():
 
 
 @admin_bp.route("/admin/export", methods=["GET"])
+@require_admin_auth
 def export_admin_csv():
     report_where, report_params = build_admin_date_filter("r")
 
@@ -354,6 +357,7 @@ def export_admin_csv():
 
 
 @admin_bp.route("/admin/suspicious-users", methods=["GET"])
+@require_admin_auth
 def get_suspicious_users():
     users = fetch_all(
         """
@@ -389,6 +393,7 @@ def get_suspicious_users():
 
 
 @admin_bp.route("/admin/users", methods=["GET"])
+@require_admin_auth
 def get_all_users():
     users = fetch_all(
         """
@@ -474,6 +479,7 @@ def get_all_users():
 
 
 @admin_bp.route("/admin/users/<int:user_id>/block", methods=["PATCH"])
+@require_admin_auth
 def block_user(user_id):
     data = request.get_json() or {}
     reason = (data.get("reason") or "疑似惡意操作，帳號已被管理員限制").strip()
@@ -552,6 +558,7 @@ def block_user(user_id):
 
 
 @admin_bp.route("/admin/users/<int:user_id>/unblock", methods=["PATCH"])
+@require_admin_auth
 def unblock_user(user_id):
 
     user = fetch_one(
