@@ -20,6 +20,159 @@ const APP_BASE_URL = (() => {
   return "http://127.0.0.1:5000";
 })();
 
+let globalLoadingCount = 0;
+
+function ensureGlobalLoadingOverlay() {
+  let overlay = document.getElementById("globalLoadingOverlay");
+
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "globalLoadingOverlay";
+    overlay.className = "global-loading-overlay";
+    overlay.innerHTML = `
+      <div class="global-loading-box" role="status" aria-live="polite">
+        <div class="global-loading-spinner"></div>
+        <div id="globalLoadingText" class="global-loading-text">處理中，請稍後...</div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  return overlay;
+}
+
+function showGlobalLoading(message = "處理中，請稍後...") {
+  globalLoadingCount += 1;
+
+  const overlay = ensureGlobalLoadingOverlay();
+  const text = document.getElementById("globalLoadingText");
+
+  if (text) {
+    text.textContent = message;
+  }
+
+  overlay.classList.add("show");
+}
+
+function hideGlobalLoading() {
+  globalLoadingCount = Math.max(0, globalLoadingCount - 1);
+
+  if (globalLoadingCount > 0) {
+    return;
+  }
+
+  const overlay = document.getElementById("globalLoadingOverlay");
+
+  if (overlay) {
+    overlay.classList.remove("show");
+  }
+}
+
+function flashButton(button) {
+  if (!button) {
+    return;
+  }
+
+  button.classList.remove("button-flash");
+  void button.offsetWidth;
+  button.classList.add("button-flash");
+
+  window.setTimeout(() => {
+    button.classList.remove("button-flash");
+  }, 600);
+}
+
+function handleGlobalButtonFlash(event) {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+
+  const button = event.target.closest("button, .btn");
+
+  if (!button || button.id === "reloadBtn" || ("disabled" in button && button.disabled)) {
+    return;
+  }
+
+  if (event.type === "click" && button.classList.contains("button-flash")) {
+    return;
+  }
+
+  flashButton(button);
+}
+
+function setupGlobalButtonFeedback() {
+  document.addEventListener("pointerdown", handleGlobalButtonFlash);
+  document.addEventListener("click", handleGlobalButtonFlash);
+}
+
+async function runWithLoading(callback, options = {}) {
+  const {
+    message = "處理中，請稍後...",
+    button = null,
+    useOverlay = true,
+  } = options;
+
+  flashButton(button);
+
+  if (button) {
+    button.classList.add("is-loading");
+  }
+
+  if (useOverlay) {
+    showGlobalLoading(message);
+  }
+
+  try {
+    return await callback();
+  } finally {
+    if (button) {
+      button.classList.remove("is-loading");
+    }
+
+    if (useOverlay) {
+      hideGlobalLoading();
+    }
+  }
+}
+
+function bindLoadingClick(buttonId, handler, options = {}) {
+  const button = document.getElementById(buttonId);
+
+  if (!button) {
+    return;
+  }
+
+  button.addEventListener("click", async (event) => {
+    await runWithLoading(
+      () => handler(event),
+      {
+        button: event.currentTarget,
+        ...options,
+      }
+    );
+  });
+}
+
+function bindLoadingSubmit(formId, handler, options = {}) {
+  const form = document.getElementById(formId);
+
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    await runWithLoading(
+      () => handler(event),
+      {
+        button: event.submitter || form.querySelector('button[type="submit"]'),
+        ...options,
+      }
+    );
+  });
+}
+
 function roleLabel(role) {
   if (role === "student") return "本校學生";
   if (role === "staff") return "教職員";
@@ -308,6 +461,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   setTodayDate();
+  setupGlobalButtonFeedback();
   bindEvents();
 
   await loadOptions();
@@ -327,25 +481,40 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 function bindEvents() {
-  document.getElementById("quickLoginBtn").addEventListener("click", quickLogin);
+  bindLoadingClick("quickLoginBtn", quickLogin, { message: "登入中，請稍後..." });
   document.getElementById("quickIdentity").addEventListener("change", updateQuickIdentityFields);
 
   document.getElementById("openLoginBtn").addEventListener("click", showAuthView);
   document.getElementById("accountBtn").addEventListener("click", toggleAccountMenu);
-  document.getElementById("myReportsBtn").addEventListener("click", showMyReports);
+  bindLoadingClick("myReportsBtn", showMyReports, { message: "載入我的通報中，請稍後..." });
   const myClaimsBtn = document.getElementById("myClaimsBtn");
   if (myClaimsBtn) {
-    myClaimsBtn.addEventListener("click", showMyClaims);
+    myClaimsBtn.addEventListener("click", async (event) => {
+      await runWithLoading(() => showMyClaims(), {
+        button: event.currentTarget,
+        message: "載入我的認領中，請稍後...",
+      });
+    });
   }
 
   const receivedClaimsBtn = document.getElementById("receivedClaimsBtn");
   if (receivedClaimsBtn) {
-    receivedClaimsBtn.addEventListener("click", showReceivedClaims);
+    receivedClaimsBtn.addEventListener("click", async (event) => {
+      await runWithLoading(() => showReceivedClaims(), {
+        button: event.currentTarget,
+        message: "載入收到的認領申請中，請稍後...",
+      });
+    });
   }
 
   const myNotificationsBtn = document.getElementById("myNotificationsBtn");
   if (myNotificationsBtn) {
-    myNotificationsBtn.addEventListener("click", showMyNotifications);
+    myNotificationsBtn.addEventListener("click", async (event) => {
+      await runWithLoading(() => showMyNotifications(), {
+        button: event.currentTarget,
+        message: "載入通知中，請稍後...",
+      });
+    });
   }
 
   document.getElementById("logoutBtn").addEventListener("click", logout);
@@ -353,7 +522,7 @@ function bindEvents() {
   document.getElementById("showLoginTabBtn").addEventListener("click", () => setAuthMode("login"));
   document.getElementById("showRegisterTabBtn").addEventListener("click", () => setAuthMode("register"));
   document.getElementById("authIdentity").addEventListener("change", updateAuthIdentityFields);
-  document.getElementById("authSubmitBtn").addEventListener("click", submitAuthForm);
+  bindLoadingClick("authSubmitBtn", submitAuthForm, { message: "送出中，請稍後..." });
 
   document.getElementById("reportType").addEventListener("change", updateReportTypeFields);
   const hasVerificationQuestion = document.getElementById("hasVerificationQuestion");
@@ -361,11 +530,16 @@ function bindEvents() {
     hasVerificationQuestion.addEventListener("change", updateVerificationFields);
   }
 
-  document.getElementById("searchBtn").addEventListener("click", handleSearch);
+  bindLoadingClick("searchBtn", handleSearch, { message: "查詢中，請稍後..." });
   const reloadBtn = document.getElementById("reloadBtn");
   reloadBtn.addEventListener("pointerdown", flashReloadButton);
-  reloadBtn.addEventListener("click", refreshAllData);
-  document.getElementById("reportForm").addEventListener("submit", submitReport);
+  reloadBtn.addEventListener("click", async (event) => {
+    await runWithLoading(() => refreshAllData(), {
+      button: event.currentTarget,
+      message: "重新整理中，請稍後...",
+    });
+  });
+  bindLoadingSubmit("reportForm", submitReport, { message: "通報送出中，請稍後..." });
 
   const reportAreaSelect = document.getElementById("reportAreaSelect");
   if (reportAreaSelect) {
@@ -385,11 +559,11 @@ function bindEvents() {
   document.getElementById("brandHomeBtn").addEventListener("click", showHomeView);
 
   document.getElementById("adminLoginBtn").addEventListener("click", showAdminLoginView);
-  document.getElementById("adminSubmitBtn").addEventListener("click", adminLogin);
+  bindLoadingClick("adminSubmitBtn", adminLogin, { message: "管理員登入中，請稍後..." });
   document.getElementById("adminLogoutBtn").addEventListener("click", adminLogout);
 
-  document.getElementById("sendMessageBtn").addEventListener("click", sendChatMessage);
-  document.getElementById("trustUserBtn").addEventListener("click", trustCurrentChatUser);
+  bindLoadingClick("sendMessageBtn", sendChatMessage, { message: "送出訊息中，請稍後...", useOverlay: false });
+  bindLoadingClick("trustUserBtn", trustCurrentChatUser, { message: "處理信任設定中，請稍後..." });
 
   document.addEventListener("click", (event) => {
     const menu = document.getElementById("accountMenu");
@@ -942,7 +1116,12 @@ async function showMyReports() {
 
     const processBtn = document.getElementById(`processLost-${report.report_id}`);
     if (processBtn) {
-      processBtn.addEventListener("click", () => markLostReportProcessed(report.report_id));
+      processBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => markLostReportProcessed(report.report_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
   });
 }
@@ -1245,15 +1424,30 @@ function renderDetail(report, recommendations = [], fromMine = false) {
   const claimBtn = document.getElementById("claimBtn");
 
   if (doneBtn) {
-    doneBtn.addEventListener("click", () => updateMyReportStatus(report));
+    doneBtn.addEventListener("click", async (event) => {
+      await runWithLoading(() => updateMyReportStatus(report), {
+        button: event.currentTarget,
+        message: "處理中，請稍後...",
+      });
+    });
   }
 
   if (deleteBtn) {
-    deleteBtn.addEventListener("click", () => deleteMyReport(report));
+    deleteBtn.addEventListener("click", async (event) => {
+      await runWithLoading(() => deleteMyReport(report), {
+        button: event.currentTarget,
+        message: "處理中，請稍後...",
+      });
+    });
   }
 
   if (contactBtn) {
-    contactBtn.addEventListener("click", () => openChatWithSubmitter(report));
+    contactBtn.addEventListener("click", async (event) => {
+      await runWithLoading(() => openChatWithSubmitter(report), {
+        button: event.currentTarget,
+        message: "開啟聊天室中，請稍後...",
+      });
+    });
   }
 
   if (claimBtn) {
@@ -1521,7 +1715,12 @@ function showClaimForm(report) {
     </div>
   `;
 
-  document.getElementById("submitClaimBtn").addEventListener("click", () => submitClaim(report));
+  document.getElementById("submitClaimBtn").addEventListener("click", async (event) => {
+    await runWithLoading(() => submitClaim(report), {
+      button: event.currentTarget,
+      message: "送出認領申請中，請稍後...",
+    });
+  });
   document.getElementById("backToDetailBtn").addEventListener("click", () => {
     showDetailView(currentDetailReport, currentDetailRecommendations, currentDetailFromMine);
   });
@@ -1596,12 +1795,22 @@ async function showMyClaims() {
   claims.forEach((claim) => {
     const completeBtn = document.getElementById(`completeClaim-${claim.claim_id}`);
     if (completeBtn) {
-      completeBtn.addEventListener("click", () => completeClaim(claim.claim_id));
+      completeBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => completeClaim(claim.claim_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
 
     const cancelBtn = document.getElementById(`cancelClaim-${claim.claim_id}`);
     if (cancelBtn) {
-      cancelBtn.addEventListener("click", () => cancelClaim(claim.claim_id));
+      cancelBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => cancelClaim(claim.claim_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
   });
 }
@@ -1680,12 +1889,22 @@ async function showReceivedClaims() {
   claims.forEach((claim) => {
     const acceptBtn = document.getElementById(`acceptClaim-${claim.claim_id}`);
     if (acceptBtn) {
-      acceptBtn.addEventListener("click", () => acceptClaim(claim.claim_id));
+      acceptBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => acceptClaim(claim.claim_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
 
     const rejectBtn = document.getElementById(`rejectClaim-${claim.claim_id}`);
     if (rejectBtn) {
-      rejectBtn.addEventListener("click", () => rejectClaim(claim.claim_id));
+      rejectBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => rejectClaim(claim.claim_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
   });
 }
@@ -2098,8 +2317,8 @@ function ensureAdminFilterPanel() {
   const firstCard = dashboard.querySelector("section.card");
   dashboard.insertBefore(filterPanel, firstCard);
 
-  document.getElementById("adminStatsSearchBtn").addEventListener("click", loadAdminStats);
-  document.getElementById("adminExportCsvBtn").addEventListener("click", exportAdminCsv);
+  bindLoadingClick("adminStatsSearchBtn", loadAdminStats, { message: "查詢統計中，請稍後..." });
+  bindLoadingClick("adminExportCsvBtn", exportAdminCsv, { message: "匯出中，請稍後..." });
 
   const currentYear = new Date().getFullYear();
   document.getElementById("adminYear").value = currentYear;
@@ -2194,7 +2413,12 @@ function ensureAdminSecurityPanel() {
 
   const adminUsersBtn = document.getElementById("adminUsersBtn");
   if (adminUsersBtn) {
-    adminUsersBtn.addEventListener("click", toggleAdminUsersView);
+    adminUsersBtn.addEventListener("click", async (event) => {
+      await runWithLoading(() => toggleAdminUsersView(), {
+        button: event.currentTarget,
+        message: "載入用戶管理中，請稍後...",
+      });
+    });
   }
 }
 
@@ -2247,12 +2471,22 @@ async function loadSuspiciousUsers() {
   users.forEach((user) => {
     const blockBtn = document.getElementById(`blockUser-${user.user_id}`);
     if (blockBtn) {
-      blockBtn.addEventListener("click", () => blockUser(user.user_id));
+      blockBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => blockUser(user.user_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
 
     const unblockBtn = document.getElementById(`unblockUser-${user.user_id}`);
     if (unblockBtn) {
-      unblockBtn.addEventListener("click", () => unblockUser(user.user_id));
+      unblockBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => unblockUser(user.user_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
   });
 }
@@ -2353,12 +2587,22 @@ async function showAdminUsers() {
   users.forEach((user) => {
     const blockBtn = document.getElementById(`blockUser-${user.user_id}`);
     if (blockBtn) {
-      blockBtn.addEventListener("click", () => blockUser(user.user_id));
+      blockBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => blockUser(user.user_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
 
     const unblockBtn = document.getElementById(`unblockUser-${user.user_id}`);
     if (unblockBtn) {
-      unblockBtn.addEventListener("click", () => unblockUser(user.user_id));
+      unblockBtn.addEventListener("click", async (event) => {
+        await runWithLoading(() => unblockUser(user.user_id), {
+          button: event.currentTarget,
+          message: "處理中，請稍後...",
+        });
+      });
     }
   });
 }
